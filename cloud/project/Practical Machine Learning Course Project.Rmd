@@ -1,0 +1,103 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "cabruce"
+date: "January 7 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)."
+
+## Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(doParallel)
+library(survival)
+library(splines)
+library(plyr)
+```
+
+## Load data and Data Tidying
+
+```{r}
+training <- read.csv("~/data/pml-training.csv", na.strings=c("#DIV/0!"), row.names = 1)
+testing <- read.csv("~//data/pml-testing.csv", na.strings=c("#DIV/0!"), row.names = 1)
+
+training <- training[, 6:dim(training)[2]]
+
+treshold <- dim(training)[1] * 0.95
+#Remove columns with more than 95% of NA or "" values
+df <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, df]
+
+df_miss <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, df_miss$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+#Partition rows into training and crossvalidation
+inTrain <- createDataPartition(training$classe, p = 0.6)[[1]]
+crossv <- training[-inTrain,]
+training <- training[ inTrain,]
+inTrain <- createDataPartition(crossv$classe, p = 0.75)[[1]]
+crossv_test <- crossv[ -inTrain,]
+crossv <- crossv[inTrain,]
+
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, df]
+testing$classe <- NA
+testing <- testing[, df_miss$nzv==FALSE]
+```
+
+## Train 3 different models using different methods
+```{r, echo=FALSE}
+mod1 <- train(classe ~ ., data=training, method="rf")
+mod2 <- train(classe ~ ., data=training, method="gbm")
+mod3 <- train(classe ~ ., data=training, method="lda")
+
+pred1 <- predict(mod1, crossv)
+pred2 <- predict(mod2, crossv)
+pred3 <- predict(mod3, crossv)
+```
+
+## Confusion Matrices
+```{r}
+confusionMatrix(pred1, crossv$classe)
+confusionMatrix(pred2, crossv$classe)
+confusionMatrix(pred3, crossv$classe)
+
+#out-of-sample error
+pred1 <- predict(mod1, crossv_test)
+pred3 <- predict(mod3, crossv_test)
+accuracy <- sum(pred1 == crossv_test$classe) / length(pred1)
+```
+
+Based on results, the Random Forest prediction was the best model over the GBM or LSA models. The RF model will be used as the sole prediction model. The confusion matrix created gives an accuracy of 99.6% for Random Forest.
+
+The out of sample error was calculated to be 99.7449% accuracy on the validation set.
+
+The model was then used to predict 20 different test cases per the next assignment.
